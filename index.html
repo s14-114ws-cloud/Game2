@@ -245,7 +245,10 @@ button{font-family:inherit;color:inherit;border:0;background:none;padding:0;curs
 
 /* 遊び方・図鑑 */
 #howto,#settings{z-index:40}
-#online{z-index:40}
+#online,#pick2p{z-index:40}
+.scroll.pick{display:flex;flex-direction:column;gap:14px;padding:20px 22px 24px}
+.scroll.pick .btn.big{min-height:76px;flex-direction:column;gap:2px;font-size:26px;line-height:1.1}
+.scroll.pick .btn small{font-size:12px}
 .scroll.on{display:flex;flex-direction:column;gap:12px}
 #onMenu,#onWait{display:flex;flex-direction:column;gap:12px}
 #onWait.hidden,#onMenu.hidden{display:none}
@@ -435,17 +438,14 @@ button{font-family:inherit;color:inherit;border:0;background:none;padding:0;curs
       <button class="btn sun big" id="btnCpu">VS CPU<small>ひとりで</small></button>
       <div class="seg lvl" id="tLvl"><button data-v="easy">よわい</button><button data-v="normal">ふつう</button><button data-v="hard">つよい</button></div>
     </div>
-    <div class="row2">
-      <button class="btn big" id="btn2p">2 PLAYERS<small>1台でふたりで</small></button>
-      <button class="btn big" id="btnOnline">ONLINE<small>通信対戦</small></button>
-    </div>
+    <button class="btn big" id="btn2p">2 PLAYERS<small>ふたりで</small></button>
     <button class="btn wood big daily" id="btnDaily"><span>DAILY CHALLENGE <b id="dNo">#1</b></span><small id="dBest"></small></button>
     <div class="row">
       <button class="btn" id="btnTut">TUTORIAL<em>はじめての人へ</em></button>
       <button class="btn" id="btnHow">図鑑</button>
       <button class="btn wood" id="btnSet">設定</button>
     </div>
-    <div class="credit">2 PLAYERS は1台のスマホを交代で操作します</div>
+    <div class="credit">2 PLAYERS は「1台でふたりで」か「ネット対戦」を選べます</div>
   </div>
 </div>
 
@@ -496,6 +496,18 @@ button{font-family:inherit;color:inherit;border:0;background:none;padding:0;curs
         <div class="seg" id="sQual"><button data-v="low">軽い</button><button data-v="mid">ふつう</button><button data-v="high">きれい</button></div>
         <div class="note">カクつく場合は「軽い」にしてください</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2 PLAYERS：遊び方の選択 -->
+<div id="pick2p" class="overlay dim hidden">
+  <div class="panel">
+    <h2>2 PLAYERS<small>どうやって遊ぶ？</small></h2>
+    <button class="xbtn" id="pickClose" aria-label="閉じる">×</button>
+    <div class="scroll pick">
+      <button class="btn sun big" id="btnLocal">1台でふたりで<small>同じスマホを交代で操作</small></button>
+      <button class="btn big" id="btnOnline">ネット対戦<small>それぞれのスマホで遊ぶ</small></button>
     </div>
   </div>
 </div>
@@ -5642,7 +5654,9 @@ const UI = {
       e.currentTarget.blur(); fn();
     });
     // タイトル
-    tap('btn2p', () => Game.startMatch('pvp'), null);
+    tap('btn2p', () => this.openSub('pick2p'));
+    tap('pickClose', () => this.closeSub());
+    tap('btnLocal', () => { this.closeSub(); Game.startMatch('pvp'); }, null);
     tap('btnCpu', () => Game.startMatch('cpu', Settings.cpu), null);
     const lv = [...document.querySelectorAll('#tLvl button')];
     const syncLv = () => lv.forEach(b => b.setAttribute('aria-pressed', b.dataset.v === Settings.cpu ? 'true' : 'false'));
@@ -5672,7 +5686,7 @@ const UI = {
     tap('shClose', () => this.share(false));
     tap('shNative', async () => { const ok = await Share.nativeShare(); if (!ok) $id('shNote').textContent = 'この環境では共有できませんでした。画像を長押しして保存してください。'; });
     tap('btnDaily', () => Game.startMatch('solo'), null);
-    tap('btnOnline', () => this.onlineLobby(true));
+    tap('btnOnline', () => { this.closeSub(); this.onlineLobby(true); });
     tap('onClose', () => { Online.leave(); this.onlineLobby(false); });
     tap('onCancel', () => { Online.leave(); this.onlineView('menu'); });
     tap('onCreate', async () => {
@@ -5751,7 +5765,7 @@ const UI = {
   },
   // ---------- 画面 ----------
   toTitle() {
-    for (const id of ['hud', 'result', 'pause', 'howto', 'settings', 'share', 'replay', 'online']) $id(id).classList.add('hidden');
+    for (const id of ['hud', 'result', 'pause', 'howto', 'settings', 'share', 'replay', 'online', 'pick2p']) $id(id).classList.add('hidden');
     this.sub = null;
     $id('title').classList.remove('hidden');
     this.dailyInfo();
@@ -5761,7 +5775,7 @@ const UI = {
     this.vignette(0);
   },
   toGame() {
-    for (const id of ['title', 'result', 'pause', 'howto', 'settings', 'share', 'replay', 'online']) $id(id).classList.add('hidden');
+    for (const id of ['title', 'result', 'pause', 'howto', 'settings', 'share', 'replay', 'online', 'pick2p']) $id(id).classList.add('hidden');
     $id('pRestart').classList.toggle('hidden', Game.mode === 'online');
     this.sub = null;
     this.hud.classList.remove('hidden');

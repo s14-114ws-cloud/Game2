@@ -147,22 +147,22 @@ const MOCK = () => {
   await S(p1, () => { Tutorial.end(); Game.goTitle(); });
   await p1.click('#btnDaily'); await waitState(p1, 'aim'); ok('DAILY CHALLENGE 開始', await S(p1, () => Game.mode === 'solo'));
   await S(p1, () => Game.goTitle());
-  await p1.click('#btn2p'); await waitState(p1, 'aim'); ok('2 PLAYERS 開始', await S(p1, () => Game.mode === 'pvp' && !!$id('timer') && Game.turnTotal === 15));
+  await p1.click('#btn2p'); await p1.click('#btnLocal'); await waitState(p1, 'aim'); ok('2 PLAYERS 開始', await S(p1, () => Game.mode === 'pvp' && !!$id('timer') && Game.turnTotal === 15));
   await S(p1, () => Game.goTitle());
 
   // オンライン：設定済みなら案内は出ない
-  await p1.click('#btnOnline');
+  await p1.click('#btn2p'); await p1.click('#btnOnline');
   ok('ONLINE：Firebase 設定済み', await S(p1, () => Online.configured() && $id('onErr').classList.contains('hidden')));
   await p1.click('#onClose');
 
   }
   // オンライン（モックDB）：2ページで対戦
   const p2 = await open();
-  await p1.click('#btnOnline'); await p1.click('#onCreate');
+  await p1.click('#btn2p'); await p1.click('#btnOnline'); await p1.click('#onCreate');
   await p1.waitForFunction(() => /^\d{4}$/.test($id('onRoom').textContent), null, { timeout: 30000 })
     .catch(async (e) => { console.log('部屋作成に失敗:', await S(p1, () => $id('onErr').textContent + ' fb=' + !!window.firebase + ' db=' + !!Online.db + ' uid=' + Online.uid + ' emu=' + JSON.stringify(window.__FB_EMULATOR)), p1.errors.join(' / '), (p1.logs || []).join(' / ')); throw e; });
   const code = await S(p1, () => $id('onRoom').textContent);
-  await p2.click('#btnOnline'); await p2.fill('#onCode', code); await p2.click('#onJoin');
+  await p2.click('#btn2p'); await p2.click('#btnOnline'); await p2.fill('#onCode', code); await p2.click('#onJoin');
   await waitState(p1, 'aim'); await waitState(p2, 'aim');
   const qa = await S(p1, () => Game.queue.map(d => d.id).join()), qb = await S(p2, () => Game.queue.map(d => d.id).join());
   ok('ONLINE：部屋作成→参加→同じ順番で開始', qa === qb, `room=${code} queue=${qa}`);
