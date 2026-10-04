@@ -455,7 +455,6 @@ button{font-family:inherit;color:inherit;border:0;background:none;padding:0;curs
     <h2>RULES<small>ルールとカエル図鑑</small></h2>
     <button class="xbtn" id="howClose" aria-label="閉じる">×</button>
     <div class="scroll">
-      <button class="btn sun" id="howTut" style="width:100%;margin-bottom:14px">▶ 実際に遊んで覚える（チュートリアル）</button>
       <ul class="rules">
         <li><span class="num">1</span><span>2人で<b>交代</b>に、カエルを1匹ずつハスの葉の台に落とします。</span></li>
         <li><span class="num">2</span><span><b>ドラッグ</b>で落とす位置、<b>ROTATE</b>で向き（15°ずつ）を決めて <b>DROP</b>！ 落下地点は影とマーカーで表示されます。</span></li>
@@ -5664,7 +5663,6 @@ const UI = {
     syncLv();
     tap('btnHow', () => this.openSub('howto'));
     tap('btnTut', () => Game.startMatch('tut'), null);
-    tap('howTut', () => { this.closeSub(); Game.startMatch('tut'); }, null);
     tap('coachOk', () => Tutorial.ok());
     tap('cEndCpu', () => { Tutorial.end(); Game.startMatch('cpu', Settings.cpu); }, null);
     tap('cEndTitle', () => { Tutorial.end(); Game.goTitle(); });
