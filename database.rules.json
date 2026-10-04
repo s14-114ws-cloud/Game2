@@ -1,0 +1,29 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      ".read": "auth != null && (query.orderByChild === 'meta/touchedAt' || query.orderByChild === 'meta/createdAt') && query.limitToFirst <= 25",
+      ".indexOn": [
+        "meta/touchedAt",
+        "meta/createdAt"
+      ],
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('players/p1/uid').val() === auth.uid) || data.child('players/p1/uid').val() === auth.uid || data.child('players/p2/uid').val() === auth.uid || (data.exists() && !data.child('players/p2').exists() && newData.child('players/p2/uid').val() === auth.uid) || (data.exists() && !newData.exists() && ((data.child('meta/createdAt').isNumber() && data.child('meta/createdAt').val() < now - 86400000) || (data.child('players/p1/online').val() !== true && data.child('players/p2/online').val() !== true && (!data.child('meta/touchedAt').isNumber() || data.child('meta/touchedAt').val() < now - 600000)))))",
+        ".validate": "$code.matches(/^[A-Z0-9]{4}$/)"
+      }
+    },
+    "frogwobble": {
+      "v1": {
+        "rooms": {
+          "$code": {
+            ".read": "auth != null",
+            ".write": "auth != null && ((!data.exists() && newData.child('host').val() === auth.uid) || data.child('host').val() === auth.uid || data.child('guest').val() === auth.uid || (data.exists() && !data.child('guest').exists() && newData.child('guest').val() === auth.uid) || (data.exists() && data.child('created').isNumber() && data.child('created').val() < now - 7200000 && (!newData.exists() || newData.child('host').val() === auth.uid)))",
+            ".validate": "$code.matches(/^[0-9]{4}$/)"
+          }
+        }
+      }
+    }
+  }
+}

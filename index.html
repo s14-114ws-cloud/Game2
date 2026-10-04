@@ -4560,15 +4560,18 @@ const Share = {
 //   ・カエルの順番は部屋の seed から両者が同じ乱数で引く
 // ============================================================
 // ↓ Extreme Speed の Firebase 設定（Firebase コンソール → プロジェクトの設定 → マイアプリ → SDK の設定と構成）をそのまま貼る
+//   （Web の設定値は公開されても問題ない値。アクセス制御は RTDB のルールと匿名ログインで行う）
 const FIREBASE_CONFIG = {
-  apiKey: '',
-  authDomain: '',
-  databaseURL: '', // 例: https://extreme-speed-xxxxx-default-rtdb.asia-southeast1.firebasedatabase.app
-  projectId: '',
-  appId: '',
+  apiKey: 'AIzaSyB6ZfG74YQpLxjM22hhtc3S0qADGEeev2g',
+  authDomain: 'extreme-speed-e4665.firebaseapp.com',
+  databaseURL: 'https://extreme-speed-e4665-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'extreme-speed-e4665',
+  storageBucket: 'extreme-speed-e4665.firebasestorage.app',
+  messagingSenderId: '395294879165',
+  appId: '1:395294879165:web:e0908e03d5538f827d76d4',
 };
 const ONLINE_ROOT = 'frogwobble/v1';
-const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.14.1/'; // Extreme Speed と同じ版
 
 const Online = {
   db: null, uid: null, ref: null, code: '', me: 0, seed: 0, match: 0, timer: '15',
@@ -4589,20 +4592,36 @@ const Online = {
       await this._script(FIREBASE_SDK + 'firebase-database-compat.js');
     }
     const app = firebase.apps.find(a => a.name === 'frogwobble') || firebase.initializeApp(FIREBASE_CONFIG, 'frogwobble');
-    // 匿名ログイン（Authentication で「匿名」を有効にしている場合）。無効でもルール次第でそのまま動く
-    try { if (app.auth) { const c = await app.auth().signInAnonymously(); this.uid = c.user && c.user.uid; } } catch (e) { console.warn('匿名ログインなしで続行', e && e.code); }
+    // テスト用：window.__FB_EMULATOR = { auth: 'http://127.0.0.1:9099', db: ['127.0.0.1', 9000] } でローカルのエミュレータへ
+    const emu = window.__FB_EMULATOR;
+    if (emu && app.auth && !this._emu) { app.auth().useEmulator(emu.auth); app.database().useEmulator(emu.db[0], emu.db[1]); this._emu = true; }
+    // 匿名ログイン（Authentication で「匿名」を有効にしておく）
+    try { if (app.auth) { const c = await app.auth().signInAnonymously(); this.uid = c.user && c.user.uid; } } catch (e) { console.warn('匿名ログイン失敗', e && e.code); }
+    if (!this.uid) throw new Error('ログインできませんでした（Firebase の Authentication で「匿名」が有効か確認してください）');
     this.db = app.database();
   },
   roomRef(code) { return this.db.ref(`${ONLINE_ROOT}/rooms/${code}`); },
+  // トランザクション：先に値を購読してキャッシュを温め、1回目から実データで判定させる
+  async _tx(ref, fn) {
+    const noop = () => {};
+    ref.on('value', noop);
+    try {
+      await ref.once('value');
+      return await ref.transaction(fn);
+    } catch (e) {
+      if (/permission/i.test(String(e && (e.code || e.message)))) throw new Error('サーバーに拒否されました（Firebase のルール追記・匿名ログインの設定を確認してください）');
+      throw e;
+    } finally { ref.off('value', noop); }
+  },
 
   // ---------- 部屋 ----------
   async create() {
     await this.connect();
     for (let i = 0; i < 10; i++) {
       const code = String(1000 + Math.floor(Math.random() * 9000)), ref = this.roomRef(code);
-      const room = { v: 1, created: Date.now(), seed: Math.floor(Math.random() * 2 ** 31), timer: Settings.timer, host: this.uid || 'h' };
+      const room = { v: 1, created: Date.now(), seed: Math.floor(Math.random() * 2 ** 31), timer: Settings.timer, host: this.uid };
       // 空き部屋（または 2 時間以上前の放置部屋）なら作る
-      const r = await ref.transaction(cur => (cur === null || !(cur.created > Date.now() - 2 * 3600e3)) ? room : undefined);
+      const r = await this._tx(ref, cur => (cur === null || !(cur.created > Date.now() - 2 * 3600e3)) ? room : undefined);
       if (!r.committed) continue;
       this._enter(code, 0, room);
       ref.child('guest').on('value', s => { if (s.exists() && !this.inMatch && this.code === code) this._begin(); });
@@ -4615,14 +4634,14 @@ const Online = {
     await this.connect();
     if (!/^\d{4}$/.test(code)) throw new Error('4けたの番号を入力してください');
     const ref = this.roomRef(code);
-    let full = false;
-    const r = await ref.transaction(cur => {
-      if (cur === null) return null; // キャッシュが空のときの仮実行（実データがあればサーバーがやり直す）
+    let full = false, none = false;
+    const r = await this._tx(ref, cur => {
+      if (cur === null) { none = true; return undefined; }
+      none = false;
       if (cur.v !== 1 || cur.guest) { full = true; return undefined; }
-      cur.guest = this.uid || 'g'; return cur;
+      full = false; cur.guest = this.uid; return cur;
     });
-    if (!r.committed) throw new Error(full ? 'その部屋はもう満員です' : '部屋に入れませんでした');
-    if (!r.snapshot.exists()) throw new Error('その番号の部屋は見つかりません');
+    if (!r.committed) throw new Error(none ? 'その番号の部屋は見つかりません' : full ? 'その部屋はもう満員です' : '部屋に入れませんでした');
     this._enter(code, 1, r.snapshot.val());
     this._begin();
   },
@@ -4634,9 +4653,11 @@ const Online = {
     pr.set(true); pr.onDisconnect().remove();
     this.ref.onDisconnect().remove(); // どちらかが切断したら部屋ごと消す
     const evs = this.ref.child('ev');
-    evs.on('child_added', s => { const e = s.val(); if (e && e.by !== this.me) this.pending.push(e); });
-    this.ref.child('aim').on('value', s => { const a = s.val(); if (a && a.by !== this.me) this.rAim = a; });
-    this.ref.child('snap').on('value', s => { const a = s.val(); if (a && a.by !== this.me) this.rSnap = a; });
+    this.lastRx = performance.now(); this.quietWarned = false;
+    const rx = () => { this.lastRx = performance.now(); this.quietWarned = false; };
+    evs.on('child_added', s => { const e = s.val(); if (e && e.by !== this.me) { this.pending.push(e); rx(); } });
+    this.ref.child('aim').on('value', s => { const a = s.val(); if (a && a.by !== this.me) { this.rAim = a; rx(); } });
+    this.ref.child('snap').on('value', s => { const a = s.val(); if (a && a.by !== this.me) { this.rSnap = a; rx(); } });
     this.ref.child('created').on('value', s => { if (!s.exists() && this.joined) this._gone(); });
     this.ref.child('p' + (1 - me)).on('value', s => { if (!s.exists() && this.inMatch) this._gone(); });
     this.offs.push(() => { evs.off(); for (const k of ['aim', 'snap', 'created', 'p' + (1 - me)]) this.ref.child(k).off(); });
@@ -4731,6 +4752,12 @@ const Online = {
     // 受信イベントは「受け取れる状態」になってから順番に処理
     while (this.pending.length && this._handle(this.pending[0])) this.pending.shift();
     const st = Game.state;
+    // 相手の番なのに長く何も届かない（相手がアプリを閉じた・電波が悪い等）ときに知らせる
+    if (this.myTurn() || (st !== 'aim' && st !== 'drop')) this.lastRx = performance.now(); // 待ち時間は相手の番の間だけ数える
+    else if (!this.quietWarned && performance.now() - this.lastRx > (this.turnTime() + 25) * 1000) {
+      this.quietWarned = true;
+      UI.toast('相手の応答がありません…（待つか、ポーズからタイトルへ）', 5);
+    }
     if (this.myTurn()) {
       if (st === 'aim') {
         this.aimT -= dt;

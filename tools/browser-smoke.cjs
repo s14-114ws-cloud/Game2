@@ -5,6 +5,8 @@ const path = require('path'), fs = require('fs'), http = require('http');
 const { chromium } = require(process.env.PW || 'playwright');
 const ROOT = path.join(__dirname, '..');
 const THREE = process.argv[2] || process.env.THREE_JS;
+// FB_EMU=<firebase-tools と firebase を npm i したディレクトリ>：モックではなく Firebase エミュレータ（本物のルール）で確認
+const EMU = process.env.FB_EMU || '';
 if (!THREE || !fs.existsSync(THREE)) { console.error('three.min.js (r128) のパスを指定してください'); process.exit(2); }
 
 // ---------- メモリ上の Firebase RTDB モック（Node 側） ----------
@@ -31,6 +33,7 @@ const MOCK = () => {
     set: (v) => window.__fb('set', p, v),
     remove: () => window.__fb('set', p, null),
     push: async (v) => { const k = await window.__fb('push', p, v); return ref(p + '/' + k); },
+    once: async () => snap(await window.__fb('get', p)),
     transaction: async (fn) => { const cur = await window.__fb('get', p); const nv = fn(cur); if (nv === undefined) return { committed: false, snapshot: snap(cur) }; await window.__fb('set', p, nv); return { committed: true, snapshot: snap(nv) }; },
     on: (ev, cb) => {
       const L = { p, ev, cb, seen: new Set() }; listeners.push(L);
@@ -64,13 +67,21 @@ const MOCK = () => {
   async function open(viewport = { width: 390, height: 844 }) {
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, hasTouch: true });
     const page = await ctx.newPage();
-    page.errors = [];
+    page.errors = []; page.logs = [];
+    page.on('console', m => page.logs.push(m.type() + ':' + m.text().slice(0, 200)));
+    page.on('requestfailed', r => page.logs.push('reqfail:' + r.url().slice(0, 120) + ' ' + (r.failure() && r.failure().errorText)));
     page.on('pageerror', e => page.errors.push(String(e)));
     page.on('console', m => { if (m.type() === 'error' && !/fonts|ERR_|net::/.test(m.text())) page.errors.push(m.text()); });
     await page.route(/cdnjs\.cloudflare\.com\/.*three\.min\.js/, r => r.fulfill({ path: THREE, contentType: 'application/javascript' }));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-    await page.exposeFunction('__fb', fbOp);
-    await page.addInitScript(MOCK);
+    if (EMU) {
+      // 本物の Firebase SDK（npm の firebase パッケージ）をローカルから配信し、エミュレータへ接続
+      await page.route(/www\.gstatic\.com\/firebasejs\/[\d.]+\/(firebase-[a-z-]+\.js)/, r => r.fulfill({ path: path.join(EMU, 'node_modules/firebase', r.request().url().split('/').pop()), contentType: 'application/javascript' }));
+      await page.addInitScript(() => { window.__FB_EMULATOR = { auth: 'http://127.0.0.1:9099', db: ['127.0.0.1', 9000] }; });
+    } else {
+      await page.exposeFunction('__fb', fbOp);
+      await page.addInitScript(MOCK);
+    }
     pages.push(page);
     await page.goto(url);
     await page.waitForFunction(() => typeof Game !== 'undefined' && Game.state === 'title', null, { timeout: 120000 });
@@ -139,17 +150,17 @@ const MOCK = () => {
   await p1.click('#btn2p'); await waitState(p1, 'aim'); ok('2 PLAYERS 開始', await S(p1, () => Game.mode === 'pvp' && !!$id('timer') && Game.turnTotal === 15));
   await S(p1, () => Game.goTitle());
 
-  // オンライン：設定が空なら案内を表示
+  // オンライン：設定済みなら案内は出ない
   await p1.click('#btnOnline');
-  ok('ONLINE：未設定なら案内', await S(p1, () => !$id('onErr').classList.contains('hidden') && /設定/.test($id('onErr').textContent)));
+  ok('ONLINE：Firebase 設定済み', await S(p1, () => Online.configured() && $id('onErr').classList.contains('hidden')));
   await p1.click('#onClose');
 
   }
   // オンライン（モックDB）：2ページで対戦
   const p2 = await open();
-  for (const pg of [p1, p2]) await S(pg, () => { FIREBASE_CONFIG.apiKey = 'test'; FIREBASE_CONFIG.databaseURL = 'https://mock'; });
   await p1.click('#btnOnline'); await p1.click('#onCreate');
-  await p1.waitForFunction(() => /^\d{4}$/.test($id('onRoom').textContent), null, { timeout: 10000 });
+  await p1.waitForFunction(() => /^\d{4}$/.test($id('onRoom').textContent), null, { timeout: 30000 })
+    .catch(async (e) => { console.log('部屋作成に失敗:', await S(p1, () => $id('onErr').textContent + ' fb=' + !!window.firebase + ' db=' + !!Online.db + ' uid=' + Online.uid + ' emu=' + JSON.stringify(window.__FB_EMULATOR)), p1.errors.join(' / '), (p1.logs || []).join(' / ')); throw e; });
   const code = await S(p1, () => $id('onRoom').textContent);
   await p2.click('#btnOnline'); await p2.fill('#onCode', code); await p2.click('#onJoin');
   await waitState(p1, 'aim'); await waitState(p2, 'aim');
