@@ -1,0 +1,16 @@
+{
+  "//": "Extreme Speed の既存ルールの \"rules\": { ... } の中に、frogwobble の部分だけを追加する（既存のキーは消さない）",
+  "rules": {
+    "frogwobble": {
+      "v1": {
+        "rooms": {
+          "$code": {
+            ".read": "auth != null",
+            ".write": "auth != null",
+            ".validate": "$code.matches(/^[0-9]{4}$/)"
+          }
+        }
+      }
+    }
+  }
+}
